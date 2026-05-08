@@ -30,12 +30,23 @@
 >
   @if (selected(); as league) {
     <div class="badge-dialog flex flex-column align-items-center gap-3">
-      <img
-        [src]="league.strBadge"
-        [alt]="league.strLeague + ' badge'"
-        class="badge-image"
-        loading="lazy"
-      />
+      @if (badgeResource.isLoading()) {
+        <div class="badge-placeholder flex align-items-center justify-content-center">
+          <p-progressSpinner ariaLabel="Loading badge" />
+        </div>
+      } @else if (badgeResource.error() || !badgeResource.value()) {
+        <div class="badge-placeholder flex flex-column align-items-center justify-content-center text-color-secondary">
+          <i class="pi pi-image text-4xl"></i>
+          <span class="mt-2 text-sm">Badge unavailable</span>
+        </div>
+      } @else {
+        <img
+          [src]="badgeResource.value()"
+          [alt]="league.strLeague + ' badge'"
+          class="badge-image"
+          loading="lazy"
+        />
+      }
       <div class="text-center">
         <div class="font-bold">{{ league.strLeague }}</div>
         <div class="text-color-secondary text-sm">{{ league.strSport }}</div>

@@ -1,4 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subject, catchError, of, switchMap, tap } from 'rxjs';
 
 import { NavBar } from '../NavBar/nav-bar';
 import { List } from '../List/list';
@@ -13,17 +15,37 @@ import { LeagueFilters, SportLeague } from '../api/sport-league.model';
 })
 export class App {
   private readonly api = inject(SportLeaguesApi);
+  private readonly filters$ = new Subject<LeagueFilters>();
 
   readonly leagues = signal<SportLeague[]>([]);
   readonly loading = signal<boolean>(false);
+  readonly error = signal<string | null>(null);
 
-  async onFiltersChange(filters: LeagueFilters): Promise<void> {
-    this.loading.set(true);
-    try {
-      const result = await this.api.getLeagues(filters);
-      this.leagues.set(result);
-    } finally {
-      this.loading.set(false);
-    }
+  constructor() {
+    this.filters$
+      .pipe(
+        tap(() => {
+          this.loading.set(true);
+          this.error.set(null);
+        }),
+        switchMap((filters) =>
+          this.api.getLeagues(filters).pipe(
+            catchError((err) => {
+              console.error('[SportLeaguesApi] failed to load leagues', err);
+              this.error.set('Failed to load leagues. Please try again.');
+              return of<SportLeague[]>([]);
+            }),
+          ),
+        ),
+        takeUntilDestroyed(),
+      )
+      .subscribe((leagues) => {
+        this.leagues.set(leagues);
+        this.loading.set(false);
+      });
+  }
+
+  onFiltersChange(filters: LeagueFilters): void {
+    this.filters$.next(filters);
   }
 }

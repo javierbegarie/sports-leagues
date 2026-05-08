@@ -1,5 +1,10 @@
 <app-nav-bar (filtersChange)="onFiltersChange($event)" />
 
 <main class="page-container px-3 py-3 md:px-4 md:py-4">
+  @if (error(); as message) {
+    <div class="surface-card border-round-xl p-3 mb-3 text-center text-red-500">
+      <i class="pi pi-exclamation-triangle mr-2"></i>{{ message }}
+    </div>
+  }
   <app-list [leagues]="leagues()" [loading]="loading()" />
 </main>

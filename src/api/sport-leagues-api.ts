@@ -1,108 +1,198 @@
-import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { Observable, forkJoin, of } from 'rxjs';
+import { map, shareReplay } from 'rxjs/operators';
+
 import { LeagueFilters, SportLeague } from './sport-league.model';
 
-const MOCK_LEAGUES: readonly SportLeague[] = [
-  {
-    id: '4328',
-    strLeague: 'English Premier League',
-    strSport: 'Soccer',
-    strLeagueAlternate: 'EPL, Premier League',
-    strBadge: 'https://placehold.co/300x300/3a0066/ffffff?text=EPL',
-  },
-  {
-    id: '4329',
-    strLeague: 'English League Championship',
-    strSport: 'Soccer',
-    strLeagueAlternate: 'EFL Championship',
-    strBadge: 'https://placehold.co/300x300/0a4d2e/ffffff?text=Championship',
-  },
-  {
-    id: '4332',
-    strLeague: 'Italian Serie A',
-    strSport: 'Soccer',
-    strLeagueAlternate: 'Serie A',
-    strBadge: 'https://placehold.co/300x300/0066cc/ffffff?text=Serie+A',
-  },
-  {
-    id: '4335',
-    strLeague: 'Spanish La Liga',
-    strSport: 'Soccer',
-    strLeagueAlternate: 'La Liga, Primera Division',
-    strBadge: 'https://placehold.co/300x300/cc0033/ffffff?text=La+Liga',
-  },
-  {
-    id: '4331',
-    strLeague: 'German Bundesliga',
-    strSport: 'Soccer',
-    strLeagueAlternate: 'Bundesliga',
-    strBadge: 'https://placehold.co/300x300/d50000/ffffff?text=Bundesliga',
-  },
-  {
-    id: '4387',
-    strLeague: 'NBA',
-    strSport: 'Basketball',
-    strLeagueAlternate: 'National Basketball Association',
-    strBadge: 'https://placehold.co/300x300/c8102e/ffffff?text=NBA',
-  },
-  {
-    id: '4516',
-    strLeague: 'WNBA',
-    strSport: 'Basketball',
-    strLeagueAlternate: "Women's National Basketball Association",
-    strBadge: 'https://placehold.co/300x300/ff8200/ffffff?text=WNBA',
-  },
-  {
-    id: '4391',
-    strLeague: 'NFL',
-    strSport: 'American Football',
-    strLeagueAlternate: 'National Football League',
-    strBadge: 'https://placehold.co/300x300/013369/ffffff?text=NFL',
-  },
-  {
-    id: '4424',
-    strLeague: 'MLB',
-    strSport: 'Baseball',
-    strLeagueAlternate: 'Major League Baseball',
-    strBadge: 'https://placehold.co/300x300/002d72/ffffff?text=MLB',
-  },
-  {
-    id: '4380',
-    strLeague: 'NHL',
-    strSport: 'Ice Hockey',
-    strLeagueAlternate: 'National Hockey League',
-    strBadge: 'https://placehold.co/300x300/111111/ffffff?text=NHL',
-  },
-];
+/* --------------------------------- Raw API shapes --------------------------------- */
+
+interface AllLeaguesResponse {
+  leagues: RawLeagueBasic[] | null;
+}
+
+interface SearchLeaguesResponse {
+  /** TheSportsDB historically returns this with the typo "countrys"; we accept both. */
+  countries?: RawLeagueDetailed[] | null;
+  countrys?: RawLeagueDetailed[] | null;
+}
+
+interface AllSportsResponse {
+  sports: RawSport[] | null;
+}
+
+interface SearchAllSeasonsResponse {
+  seasons: RawSeasonBadge[] | null;
+}
+
+interface RawLeagueBasic {
+  idLeague?: string;
+  strLeague?: string;
+  strSport?: string;
+  strLeagueAlternate?: string;
+}
+
+interface RawLeagueDetailed extends RawLeagueBasic {
+  strBadge?: string;
+  strLogo?: string;
+}
+
+interface RawSport {
+  idSport?: string;
+  strSport?: string;
+}
+
+interface RawSeasonBadge {
+  strSeason?: string;
+  strBadge?: string;
+}
+
+/* ----------------------------------- Service ----------------------------------- */
 
 @Injectable({ providedIn: 'root' })
 export class SportLeaguesApi {
-  private readonly leaguesCache = new Map<string, SportLeague[]>();
-  private sportsCache: string[] | null = null;
+  private readonly http = inject(HttpClient);
 
-  async getLeagues(filters: LeagueFilters = {}): Promise<SportLeague[]> {
+  /** TheSportsDB free/demo key. Swap to a private key by setting `apiKey`. */
+  private readonly baseUrl = 'https://www.thesportsdb.com/api/v1/json';
+  private readonly apiKey = '123';
+  /** The badge endpoint requires the public key `3` per the docs. */
+  private readonly badgeApiKey = '3';
+
+  /**
+   * Cache responses by query so repeat filter selections do not refetch.
+   * `shareReplay(1)` makes each Observable hot+cached for late subscribers.
+   */
+  private readonly leaguesCache = new Map<string, Observable<SportLeague[]>>();
+  private readonly badgeCache = new Map<string, Observable<string | null>>();
+  private sportsCache$: Observable<string[]> | null = null;
+
+  /** Fetch leagues honoring the current filters. Search is applied client-side. */
+  getLeagues(filters: LeagueFilters = {}): Observable<SportLeague[]> {
     const key = this.buildCacheKey(filters);
     const cached = this.leaguesCache.get(key);
     if (cached) {
       return cached;
     }
-    await this.simulateLatency(200);
-    const result = this.applyFilters([...MOCK_LEAGUES], filters);
-    this.leaguesCache.set(key, result);
-    return result;
+
+    const sports = filters.sports ?? [];
+    const search = (filters.search ?? '').trim().toLowerCase();
+
+    const source$: Observable<SportLeague[]> =
+      sports.length === 0
+        ? this.fetchAllLeagues()
+        : sports.length === 1
+          ? this.fetchLeaguesBySport(sports[0])
+          : forkJoin(sports.map((s) => this.fetchLeaguesBySport(s))).pipe(
+              map((groups) => this.dedupeById(groups.flat())),
+            );
+
+    const result$ = source$.pipe(
+      map((leagues) => this.applySearch(leagues, search)),
+      shareReplay({ bufferSize: 1, refCount: false }),
+    );
+    this.leaguesCache.set(key, result$);
+    return result$;
   }
 
-  async getSports(): Promise<string[]> {
-    if (this.sportsCache) {
-      return this.sportsCache;
+  /** Distinct sport names, alphabetized. */
+  getSports(): Observable<string[]> {
+    if (this.sportsCache$) {
+      return this.sportsCache$;
     }
-    await this.simulateLatency(50);
-    this.sportsCache = [...new Set(MOCK_LEAGUES.map((l) => l.strSport))].sort();
-    return this.sportsCache;
+    this.sportsCache$ = this.http
+      .get<AllSportsResponse>(`${this.baseUrl}/${this.apiKey}/all_sports.php`)
+      .pipe(
+        map((res) =>
+          (res.sports ?? [])
+            .map((s) => s.strSport ?? '')
+            .filter((s): s is string => !!s)
+            .sort((a, b) => a.localeCompare(b)),
+        ),
+        shareReplay({ bufferSize: 1, refCount: false }),
+      );
+    return this.sportsCache$;
   }
 
+  /** Resolve a league badge URL on demand (used when the league listing has none). */
+  getLeagueBadge(id: string): Observable<string | null> {
+    if (!id) {
+      return of(null);
+    }
+    const cached = this.badgeCache.get(id);
+    if (cached) {
+      return cached;
+    }
+    const params = new HttpParams().set('badge', '1').set('id', id);
+    const fetched$ = this.http
+      .get<SearchAllSeasonsResponse>(`${this.baseUrl}/${this.badgeApiKey}/search_all_seasons.php`, {
+        params,
+      })
+      .pipe(
+        map((res) => res.seasons?.find((s) => !!s.strBadge)?.strBadge ?? null),
+        shareReplay({ bufferSize: 1, refCount: false }),
+      );
+    this.badgeCache.set(id, fetched$);
+    return fetched$;
+  }
+
+  /** Drop all in-memory caches (e.g., after a manual refresh). */
   clearCache(): void {
     this.leaguesCache.clear();
-    this.sportsCache = null;
+    this.badgeCache.clear();
+    this.sportsCache$ = null;
+  }
+
+  /* ------------------------------ Private helpers ------------------------------ */
+
+  private fetchAllLeagues(): Observable<SportLeague[]> {
+    return this.http
+      .get<AllLeaguesResponse>(`${this.baseUrl}/${this.apiKey}/all_leagues.php`)
+      .pipe(map((res) => (res.leagues ?? []).map((l) => this.toSportLeague(l))));
+  }
+
+  private fetchLeaguesBySport(sport: string): Observable<SportLeague[]> {
+    const params = new HttpParams().set('s', sport);
+    return this.http
+      .get<SearchLeaguesResponse>(`${this.baseUrl}/${this.apiKey}/search_all_leagues.php`, {
+        params,
+      })
+      .pipe(
+        map((res) => res.countries ?? res.countrys ?? []),
+        map((leagues) => leagues.map((l) => this.toSportLeague(l))),
+      );
+  }
+
+  private toSportLeague(raw: RawLeagueDetailed | RawLeagueBasic): SportLeague {
+    const detailed = raw as RawLeagueDetailed;
+    return {
+      id: raw.idLeague ?? '',
+      strLeague: raw.strLeague ?? '',
+      strSport: raw.strSport ?? '',
+      strLeagueAlternate: raw.strLeagueAlternate ?? '',
+      strBadge: detailed.strBadge ?? '',
+    };
+  }
+
+  private applySearch(leagues: SportLeague[], search: string): SportLeague[] {
+    if (!search) {
+      return leagues;
+    }
+    return leagues.filter(
+      (l) =>
+        l.strLeague.toLowerCase().includes(search) ||
+        l.strLeagueAlternate.toLowerCase().includes(search),
+    );
+  }
+
+  private dedupeById(leagues: SportLeague[]): SportLeague[] {
+    const map = new Map<string, SportLeague>();
+    for (const l of leagues) {
+      if (l.id) {
+        map.set(l.id, l);
+      }
+    }
+    return [...map.values()];
   }
 
   private buildCacheKey(filters: LeagueFilters): string {
@@ -110,22 +200,5 @@ export class SportLeaguesApi {
       search: (filters.search ?? '').trim().toLowerCase(),
       sports: [...(filters.sports ?? [])].sort(),
     });
-  }
-
-  private applyFilters(leagues: SportLeague[], filters: LeagueFilters): SportLeague[] {
-    const search = (filters.search ?? '').trim().toLowerCase();
-    const sports = filters.sports ?? [];
-    return leagues.filter((league) => {
-      const matchesSearch =
-        !search ||
-        league.strLeague.toLowerCase().includes(search) ||
-        league.strLeagueAlternate.toLowerCase().includes(search);
-      const matchesSport = sports.length === 0 || sports.includes(league.strSport);
-      return matchesSearch && matchesSport;
-    });
-  }
-
-  private simulateLatency(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
