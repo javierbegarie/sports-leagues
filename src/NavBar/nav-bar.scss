@@ -1,0 +1,20 @@
+:host {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.navbar {
+  background: var(--p-content-background);
+  border-bottom: 1px solid var(--p-content-border-color);
+}
+
+.navbar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.navbar-brand {
+  color: var(--p-text-color);
+}

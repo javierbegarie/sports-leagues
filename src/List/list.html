@@ -1,0 +1,45 @@
+@if (loading()) {
+  <div class="flex justify-content-center align-items-center py-6">
+    <p-progressSpinner ariaLabel="Loading leagues" />
+  </div>
+} @else if (leagues().length === 0) {
+  <div class="empty-state surface-card border-round-xl p-5 text-center">
+    <i class="pi pi-search text-4xl text-color-secondary"></i>
+    <p class="mt-3 mb-0 text-color-secondary">No leagues match your filters.</p>
+  </div>
+} @else {
+  <div class="grid">
+    @for (league of leagues(); track league.id) {
+      <div class="col-12">
+        <app-list-item [league]="league" (selected)="onSelect($event)" />
+      </div>
+    }
+  </div>
+}
+
+<p-dialog
+  [visible]="!!selected()"
+  (visibleChange)="onDialogVisibleChange($event)"
+  [modal]="true"
+  [dismissableMask]="true"
+  [closeOnEscape]="true"
+  [draggable]="false"
+  [resizable]="false"
+  [style]="{ width: 'min(420px, 92vw)' }"
+  [header]="selected()?.strLeague ?? ''"
+>
+  @if (selected(); as league) {
+    <div class="badge-dialog flex flex-column align-items-center gap-3">
+      <img
+        [src]="league.strBadge"
+        [alt]="league.strLeague + ' badge'"
+        class="badge-image"
+        loading="lazy"
+      />
+      <div class="text-center">
+        <div class="font-bold">{{ league.strLeague }}</div>
+        <div class="text-color-secondary text-sm">{{ league.strSport }}</div>
+      </div>
+    </div>
+  }
+</p-dialog>

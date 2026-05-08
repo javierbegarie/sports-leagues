@@ -1,0 +1,40 @@
+<nav class="navbar surface-card shadow-2">
+  <div
+    class="navbar-inner flex flex-column gap-3 px-3 py-3 md:flex-row md:align-items-center md:gap-4 md:px-4"
+    [formGroup]="form"
+  >
+    <div class="navbar-brand flex align-items-center gap-2">
+      <i class="pi pi-bookmark-fill text-primary text-2xl"></i>
+      <span class="font-bold text-xl white-space-nowrap">Sport Leagues</span>
+    </div>
+
+    <div class="filters flex flex-column gap-2 flex-grow-1 md:flex-row md:gap-3">
+      <p-iconField iconPosition="left" class="flex-grow-1" styleClass="w-full">
+        <p-inputIcon>
+          <i class="pi pi-search"></i>
+        </p-inputIcon>
+        <input
+          pInputText
+          type="text"
+          formControlName="search"
+          placeholder="Search leagues..."
+          class="w-full"
+          aria-label="Search leagues"
+        />
+      </p-iconField>
+
+      <p-multiSelect
+        formControlName="sports"
+        [options]="sportOptions()"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Filter by sport"
+        display="chip"
+        styleClass="w-full md:w-20rem"
+        [showClear]="true"
+        [filter]="false"
+        ariaLabel="Filter by sport"
+      />
+    </div>
+  </div>
+</nav>

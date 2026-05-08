@@ -1,0 +1,16 @@
+:host {
+  display: block;
+}
+
+.empty-state {
+  background: var(--p-content-background);
+  border: 1px dashed var(--p-content-border-color);
+}
+
+.badge-image {
+  width: 220px;
+  height: 220px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: var(--p-surface-100, #f1f5f9);
+}

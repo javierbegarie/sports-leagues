@@ -1,0 +1,27 @@
+<p-card styleClass="list-item-card h-full" (click)="onClick()" (keydown)="onKeydown($event)">
+  <div
+    class="list-item-content flex flex-column gap-1 md:flex-row md:gap-4 md:align-items-baseline"
+    role="button"
+    tabindex="0"
+    [attr.aria-label]="'Show badge for ' + league().strLeague"
+  >
+    <div class="league-name font-bold text-lg md:flex-1">
+      {{ league().strLeague }}
+    </div>
+
+    <div
+      class="league-meta flex flex-column gap-1 md:flex-row md:gap-3 md:flex-2 text-color-secondary"
+    >
+      <div class="league-sport">
+        <i class="pi pi-tag mr-1 text-sm"></i>
+        <span>{{ league().strSport }}</span>
+      </div>
+      @if (league().strLeagueAlternate) {
+        <div class="league-alternate">
+          <i class="pi pi-info-circle mr-1 text-sm"></i>
+          <span>{{ league().strLeagueAlternate }}</span>
+        </div>
+      }
+    </div>
+  </div>
+</p-card>
